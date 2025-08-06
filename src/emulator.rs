@@ -2,9 +2,11 @@
 
 use std::{collections::HashMap, fs, path::PathBuf};
 
-use minifb::{Key, Window, WindowOptions};
+use minifb::Key;
 
 use crate::DISPLAY_SIZE;
+
+const FONT_STARTING_ADDR: usize = 0x50;
 
 // memeory available to the emulator
 const MEMORY_SIZE: usize = 4096;
@@ -121,7 +123,7 @@ impl Chip8 {
         ];
 
         // convention to put font data at 0x050 - 0x9F
-        let mut idx = 0x050;
+        let mut idx = FONT_STARTING_ADDR;
         for char in font.iter() {
             self.memory[idx] = *char;
             idx += 1;
@@ -197,11 +199,11 @@ impl Chip8 {
                 //
             }
             0x6 => {
-                self.op_6xnn(x, nn);
+                self.op_6xnn(x as usize, nn);
                 //
             }
             0x7 => {
-                self.op_7xnn(x, nn);
+                self.op_7xnn(x as usize, nn);
                 //
             }
             0x8 => {
@@ -225,7 +227,7 @@ impl Chip8 {
                 //
             }
             0xD => {
-                self.op_dxyn(n, x, y);
+                self.op_dxyn(n, x as usize, y as usize);
             }
             0xE => {
                 unimplemented!("I Should be doing something here! - E");
@@ -247,25 +249,145 @@ impl Chip8 {
         self.display.iter_mut().for_each(|pixel| *pixel = 0);
     }
 
+    // Computer specific instruction - not needed
+    // fn op_0nnn() {}
+
     /// Sets PC to ```nnn```,
     /// Does not increment the PC afterwards.
     fn op_1nnn(&mut self, nnn: u16) {
         self.pc = nnn as usize;
     }
 
+    /// Return from subroutine by setting pc to popped stack address
+    fn op_00ee(&mut self) {
+        let last_instruction = self.stack.pop().unwrap();
+        self.pc = last_instruction as usize;
+    }
+
+    /// Saves current pc to stack before setting pc to ```nnn```
+    fn op_2nnn(&mut self, nnn: u16) {
+        self.stack.push(self.pc as u16);
+        self.pc = nnn as usize;
+    }
+
+    /// Skips one instruction if V```x``` is equal to ```nn```
+    fn op_3xnn(&mut self, x: usize, nn: u8) {
+        if self.v[x] == nn {
+            self.pc += 2;
+        }
+    }
+
+    /// Skips one instruction if V```x``` is not equal to ```nn```
+    fn op_4xnn(&mut self, x: usize, nn: u8) {
+        if self.v[x] != nn {
+            self.pc += 2;
+        }
+    }
+
+    /// Skips one instruction if values in V```x``` and V```y``` are equal
+    fn op_5xy0(&mut self, x: usize, y: usize) {
+        if self.v[x] == self.v[y] {
+            self.pc += 2;
+        }
+    }
+
     /// looks up register ```x``` and sets its value to ```nn```
-    fn op_6xnn(&mut self, x: u8, nn: u8) {
-        self.v[x as usize] = nn;
+    fn op_6xnn(&mut self, x: usize, nn: u8) {
+        self.v[x] = nn;
     }
 
     /// Add the value ```nn``` to VX.
-    fn op_7xnn(&mut self, x: u8, nn: u8) {
-        self.v[x as usize] += nn;
+    fn op_7xnn(&mut self, x: usize, nn: u8) {
+        self.v[x] += nn;
     }
+
+    /// set V```x``` to value of V```y```
+    fn op_8xy0(&mut self, x: usize, y: usize) {
+        self.v[x] = self.v[y];
+    }
+
+    /// sets V```x``` to bitwise OR of V```x``` and V```y```
+    fn op_8xy1(&mut self, x: usize, y: usize) {
+        self.v[x] |= self.v[y];
+    }
+
+    /// sets V```x``` to bitwise AND of V```x``` and V```y```
+    fn op_8xy2(&mut self, x: usize, y: usize) {
+        self.v[x] &= self.v[y];
+    }
+
+    /// sets V```x``` to bitwise XOR of V```x``` and V```y```
+    fn op_8xy3(&mut self, x: usize, y: usize) {
+        self.v[x] ^= self.v[y];
+    }
+
+    /// sets V```x``` to the sum of V```x``` and V```y```
+    fn op_8xy4(&mut self, x: usize, y: usize) {
+        self.v[x] += self.v[y];
+    }
+
+    /// sets V```x``` to the difference of V```x``` and V```y```
+    fn op_8xy5(&mut self, x: usize, y: usize) {
+        self.v[x] -= self.v[y];
+    }
+
+    /// Stores V```y``` into V```x```, right shifts V```x```, and optionally sets VF.
+    /// Uses COSMAC VIP implementation.
+    fn op_8xy6(&mut self, x: usize, y: usize) {
+        println!("Beginning op_8xy6 instruction");
+
+        self.v[x] = self.v[y];
+
+        // Figure out if bit to be shifted out is set, set vF to that value
+        let lsb = 1 & self.v[x];
+        self.v[x] >>= 1;
+        self.v[0xF] = lsb;
+    }
+
+    /// sets V```x``` to difference V```y``` and V```x```.
+    /// Also sets V[0xF] based on the subtraction operation
+    fn op_8xy7(&mut self, x: usize, y: usize) {
+        println!("Beginning op_8xy7 instruction");
+
+        self.v[y] -= self.v[x];
+
+        if self.v[y] > self.v[x] {
+            self.v[0xF] = 1;
+        } else if self.v[y] < self.v[x] {
+            self.v[0xF] = 0;
+        }
+    }
+
+    /// Stores V```y``` into V```x```, left shifts V```x```, and optionally sets VF
+    /// Uses COSMAC VIP implementation.
+    fn op_8xye(&mut self, x: usize, y: usize) {
+        println!("Beginning op_8xye instruction");
+        self.v[x] = self.v[y];
+
+        // Figure out if bit to be shifted out is set, set vF to that value
+        let msb = 0b1000_0000 & self.v[x];
+        self.v[x] <<= 1;
+        self.v[0xF] = msb;
+    }
+
+    fn op_9xy0() {}
 
     /// Sets the index register I to ```nnn```
     fn op_annn(&mut self, nnn: u16) {
         self.i = nnn;
+    }
+
+    /// Jumps to address ```nnn``` plus the value in register V[0].
+    /// Uses COSMAC VIP implementation.
+    fn op_bnnn(&mut self, nnn: u16) {
+        let jump_destination = nnn + self.v[0] as u16;
+        self.op_1nnn(jump_destination);
+    }
+
+    /// Generates a random number, binary ANDs it with ```nn```, and puts the result in V```x```.
+    fn op_cxnn(&mut self, nn: u8, x: usize) {
+        let num = rand::random::<u8>();
+        self.v[x] = num & nn;
     }
 
     ///
@@ -275,11 +397,11 @@ impl Chip8 {
     /// * `n` - Number of pixels in a sprite
     /// * `x` - Coordinate x from V[```x```] register
     /// * `y` - Coordinate y from V[```y```] register
-    fn op_dxyn(&mut self, n: u8, x: u8, y: u16) {
+    fn op_dxyn(&mut self, n: u8, x: usize, y: usize) {
         // using literals instead of DISPLAY constants
         // to minimize casting
-        let pos_x = self.v[x as usize] % 64;
-        let pos_y = self.v[y as usize] % 32;
+        let pos_x = self.v[x] % 64;
+        let pos_y = self.v[y] % 32;
         self.v[0xF] = 0;
 
         for pixel in 0..n {
@@ -308,12 +430,78 @@ impl Chip8 {
                         // for the library in use, each pixel must be toggled "on"
                         // by using 0 or 255.
                         self.display[display_idx] = 0xFF;
-                        println!("Drawing at {display_idx}");
                     }
                 }
             }
         }
     }
+
+    /// Skips one instruction if key in value V```x``` is pressed.
+    fn op_ex9e(&mut self, x: usize) {
+        todo!("Might have to redesign");
+        // can't reverse lookup because emulator would need a reference to the active window object
+        // keymap
+        // keys
+        // new -> map thing
+        // maybe handle_keypress takes the key and maps it instead of using a map itself?
+        // second map?
+        // just query for keys directly?
+    }
+
+    /// Skips one instruction if key in value V```x``` is not pressed.
+    fn op_exa1() {}
+
+    /// sets v```x``` to current delay timer value.
+    fn op_fx07(&mut self, x: usize) {
+        self.v[x] = self.delay_timer;
+    }
+
+    /// sets delay timer to the value in v```x```.
+    fn op_fx15(&mut self, x: usize) {
+        self.delay_timer = self.v[x];
+    }
+
+    /// sets the sound timer to the value in v```x```.
+    fn op_fx18(&mut self, x: usize) {
+        self.sound_timer = self.v[x];
+    }
+
+    /// Adds value of v```x``` to index register.
+    fn op_fx1e(&mut self, x: usize) {
+        self.i += (self.v[x]) as u16;
+    }
+
+    // stops executing and waits for a key press idk
+    fn op_fx0a() {}
+
+    /// sets index register to the address of hexadecimal character in v```x```.
+    fn op_fx29(&mut self, x: usize) {
+        // isolate lower nibble to get needed char
+        let num = 0xf & self.v[x];
+
+        // multiply by 5 since each char is 5 bytes apart to get offset & font starting idx
+        self.i = self.memory[FONT_STARTING_ADDR + (5 * num as usize)] as u16;
+    }
+
+    /// Convert value in v```x``` to three decimal digits
+    /// and store them in memory at address in index register i.
+    fn op_fx33(&mut self, x: usize) {
+        // todo - fkn change the parameters to usize man
+        // since any given number in v is u8 (<= 255), we only need to modulo 3 times
+        let mut num = self.v[x];
+        let address = self.i;
+
+        // num will be truncated toward zero
+        self.memory[(address + 2) as usize] = num % 10;
+        num /= 10;
+
+        self.memory[(address + 1) as usize] = num % 10;
+        num /= 10;
+
+        self.memory[address as usize] = num % 10;
+    }
+    fn op_fx55() {}
+    fn op_fx65() {}
 }
 
 #[cfg(test)]
