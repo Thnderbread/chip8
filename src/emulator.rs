@@ -14,13 +14,19 @@ const MEMORY_SIZE: usize = 4096;
 // Programs start at address 200
 const PROGRAM_STARTING_ADDR: usize = 0x200;
 
+/// Represents the value in the keys store
+///
+/// - `0`: Whether the key is pressed (bool).
+/// - `1`: The corresponding Chip8 Key (&'static str).
+pub struct KeyMapValue(pub bool, pub u8);
+
 pub struct Chip8 {
     memory: [u8; MEMORY_SIZE],
     display: [u32; DISPLAY_SIZE],
     stack: Vec<u16>,
     delay_timer: u8,
     sound_timer: u8,
-    keys: HashMap<Key, &'static str>,
+    pub keys: HashMap<Key, KeyMapValue>,
     pc: usize,
     v: [u8; 16],
     i: u16,
@@ -65,22 +71,22 @@ impl Chip8 {
     }
 
     fn set_keys(&mut self) {
-        self.keys.insert(Key::Key1, "1");
-        self.keys.insert(Key::Key2, "2");
-        self.keys.insert(Key::Key3, "3");
-        self.keys.insert(Key::Key4, "C");
-        self.keys.insert(Key::Q, "4");
-        self.keys.insert(Key::W, "5");
-        self.keys.insert(Key::E, "6");
-        self.keys.insert(Key::R, "D");
-        self.keys.insert(Key::A, "7");
-        self.keys.insert(Key::S, "8");
-        self.keys.insert(Key::D, "9");
-        self.keys.insert(Key::F, "E");
-        self.keys.insert(Key::A, "Z");
-        self.keys.insert(Key::O, "X");
-        self.keys.insert(Key::B, "C");
-        self.keys.insert(Key::F, "V");
+        self.keys.insert(Key::Key1, KeyMapValue(false, 0x1));
+        self.keys.insert(Key::Key2, KeyMapValue(false, 0x2));
+        self.keys.insert(Key::Key3, KeyMapValue(false, 0x3));
+        self.keys.insert(Key::Key4, KeyMapValue(false, 0xC));
+        self.keys.insert(Key::Q, KeyMapValue(false, 0x4));
+        self.keys.insert(Key::W, KeyMapValue(false, 0x5));
+        self.keys.insert(Key::E, KeyMapValue(false, 0x6));
+        self.keys.insert(Key::R, KeyMapValue(false, 0xD));
+        self.keys.insert(Key::A, KeyMapValue(false, 0x7));
+        self.keys.insert(Key::S, KeyMapValue(false, 0x8));
+        self.keys.insert(Key::D, KeyMapValue(false, 0x9));
+        self.keys.insert(Key::F, KeyMapValue(false, 0xE));
+        self.keys.insert(Key::A, KeyMapValue(false, 0xA));
+        self.keys.insert(Key::O, KeyMapValue(false, 0x0));
+        self.keys.insert(Key::B, KeyMapValue(false, 0xB));
+        self.keys.insert(Key::F, KeyMapValue(false, 0xF));
     }
 
     pub fn decrement_timers(&mut self) {
@@ -89,12 +95,6 @@ impl Chip8 {
         }
         if self.sound_timer > 0 {
             self.sound_timer -= 1
-        }
-    }
-
-    pub fn handle_keypress(&mut self, key: &Key) {
-        if let Some(input) = self.keys.get(key) {
-            println!("Chip 8 key: {input}");
         }
     }
 
@@ -165,9 +165,9 @@ impl Chip8 {
         // first nibble
         let high_nibble = (opcode & 0xF000) >> 12;
         // second nibble - used for lookup into V (vx)
-        let x = ((opcode & 0x0F00) >> 8) as u8;
+        let x = ((opcode & 0x0F00) >> 8) as usize;
         // third nibble
-        let y = (opcode & 0x00F0) >> 4;
+        let y = ((opcode & 0x00F0) >> 4) as usize;
         // fourth nibble
         let n = (opcode & 0xF) as u8;
         // 3rd & 4th nibbles
@@ -176,70 +176,57 @@ impl Chip8 {
         let nnn = opcode & 0x0FFF;
 
         match high_nibble {
-            0x0 => {
-                self.op_00e0();
-            }
-            0x1 => {
-                self.op_1nnn(nnn);
-            }
-            0x2 => {
-                unimplemented!("I Should be doing something here! - 2");
-                //
-            }
-            0x3 => {
-                unimplemented!("I Should be doing something here! - 3");
-                //
-            }
-            0x4 => {
-                unimplemented!("I Should be doing something here! - 4");
-                //
-            }
-            0x5 => {
-                unimplemented!("I Should be doing something here! - 5");
-                //
-            }
-            0x6 => {
-                self.op_6xnn(x as usize, nn);
-                //
-            }
-            0x7 => {
-                self.op_7xnn(x as usize, nn);
-                //
-            }
-            0x8 => {
-                unimplemented!("I Should be doing something here! - 8");
-                //
-            }
-            0x9 => {
-                unimplemented!("I Should be doing something here! - 9");
-                //
-            }
-            0xA => {
-                self.op_annn(nnn);
-                //
-            }
-            0xB => {
-                unimplemented!("I Should be doing something here! - B");
-                //
-            }
-            0xC => {
-                unimplemented!("I Should be doing something here! - C");
-                //
-            }
-            0xD => {
-                self.op_dxyn(n, x as usize, y as usize);
-            }
-            0xE => {
-                unimplemented!("I Should be doing something here! - E");
-                //
-            }
-            0xF => {
-                unimplemented!("I Should be doing something here! - F");
-                //
-            }
+            0x0 => match opcode {
+                0x00E0 => self.op_00e0(),
+                0x00EE => self.op_00ee(),
+                _ => self.pc += 2, // 0NNN, ignore this instruction
+            },
+            0x1 => self.op_1nnn(nnn),
+            0x2 => self.op_2nnn(nnn),
+            0x3 => self.op_3xnn(x, nn),
+            0x4 => self.op_4xnn(x, nn),
+            0x5 => self.op_5xy0(x, y),
+            0x6 => self.op_6xnn(x, nn),
+            0x7 => self.op_7xnn(x, nn),
+            0x8 => match n {
+                0x0 => self.op_8xy0(x, y),
+                0x1 => self.op_8xy1(x, y),
+                0x2 => self.op_8xy2(x, y),
+                0x3 => self.op_8xy3(x, y),
+                0x4 => self.op_8xy4(x, y),
+                0x5 => self.op_8xy5(x, y),
+                0x6 => self.op_8xy6(x, y),
+                0x7 => self.op_8xy7(x, y),
+                0xE => self.op_8xye(x, y),
+                _ => {
+                    self.op_unknown(opcode);
+                }
+            },
+            0x9 => self.op_9xy0(x, y),
+            0xA => self.op_annn(nnn),
+            0xB => self.op_bnnn(nnn),
+            0xC => self.op_cxnn(nn, x),
+            0xD => self.op_dxyn(n, x, y),
+            0xE => match n {
+                0xE => self.op_ex9e(x),
+                0x1 => self.op_exa1(x),
+                _ => self.op_unknown(opcode),
+            },
+            0xF => match nn {
+                0x07 => self.op_fx07(x),
+                0x0a => self.op_fx0a(),
+                0x15 => self.op_fx15(x),
+                0x18 => self.op_fx18(x),
+                0x1e => self.op_fx1e(x),
+                0x29 => self.op_fx29(x),
+                0x33 => self.op_fx33(x),
+                0x55 => self.op_fx55(x),
+                0x65 => self.op_fx65(x),
+                _ => self.op_unknown(opcode),
+            },
             _ => {
                 // satisfies u16::MIN & u16::MAX
-                println!("Bad things are happening bro");
+                self.op_unknown(opcode);
             }
         };
     }
@@ -284,7 +271,8 @@ impl Chip8 {
         }
     }
 
-    /// Skips one instruction if values in V```x``` and V```y``` are equal
+    /// Skips one instruction if
+    /// values in V```x``` and V```y``` are equal
     fn op_5xy0(&mut self, x: usize, y: usize) {
         if self.v[x] == self.v[y] {
             self.pc += 2;
@@ -298,7 +286,8 @@ impl Chip8 {
 
     /// Add the value ```nn``` to VX.
     fn op_7xnn(&mut self, x: usize, nn: u8) {
-        self.v[x] += nn;
+        let result = self.v[x].overflowing_add(nn);
+        self.v[x] = result.0;
     }
 
     /// set V```x``` to value of V```y```
@@ -323,19 +312,28 @@ impl Chip8 {
 
     /// sets V```x``` to the sum of V```x``` and V```y```
     fn op_8xy4(&mut self, x: usize, y: usize) {
-        self.v[x] += self.v[y];
+        let result = self.v[x].overflowing_add(self.v[y]);
+        self.v[x] = result.0;
+
+        // cast it cause I'm lazy
+        self.v[0xF] = result.1 as u8;
     }
 
     /// sets V```x``` to the difference of V```x``` and V```y```
     fn op_8xy5(&mut self, x: usize, y: usize) {
-        self.v[x] -= self.v[y];
+        let result = self.v[x].overflowing_sub(self.v[y]);
+        self.v[x] = result.0;
+
+        if self.v[y] > self.v[x] {
+            self.v[0xF] = 1;
+        } else {
+            self.v[0xF] = 0;
+        }
     }
 
     /// Stores V```y``` into V```x```, right shifts V```x```, and optionally sets VF.
     /// Uses COSMAC VIP implementation.
     fn op_8xy6(&mut self, x: usize, y: usize) {
-        println!("Beginning op_8xy6 instruction");
-
         self.v[x] = self.v[y];
 
         // Figure out if bit to be shifted out is set, set vF to that value
@@ -347,9 +345,8 @@ impl Chip8 {
     /// sets V```x``` to difference V```y``` and V```x```.
     /// Also sets V[0xF] based on the subtraction operation
     fn op_8xy7(&mut self, x: usize, y: usize) {
-        println!("Beginning op_8xy7 instruction");
-
-        self.v[y] -= self.v[x];
+        let result = self.v[y].overflowing_sub(self.v[x]);
+        self.v[x] = result.0;
 
         if self.v[y] > self.v[x] {
             self.v[0xF] = 1;
@@ -361,7 +358,6 @@ impl Chip8 {
     /// Stores V```y``` into V```x```, left shifts V```x```, and optionally sets VF
     /// Uses COSMAC VIP implementation.
     fn op_8xye(&mut self, x: usize, y: usize) {
-        println!("Beginning op_8xye instruction");
         self.v[x] = self.v[y];
 
         // Figure out if bit to be shifted out is set, set vF to that value
@@ -370,7 +366,13 @@ impl Chip8 {
         self.v[0xF] = msb;
     }
 
-    fn op_9xy0() {}
+    /// Skips one instruction if
+    /// V```x``` and V```y``` are not equal
+    fn op_9xy0(&mut self, x: usize, y: usize) {
+        if self.v[x] != self.v[y] {
+            self.pc += 2;
+        }
+    }
 
     /// Sets the index register I to ```nnn```
     fn op_annn(&mut self, nnn: u16) {
@@ -437,19 +439,26 @@ impl Chip8 {
     }
 
     /// Skips one instruction if key in value V```x``` is pressed.
+    /// checks if key is currently being held.
     fn op_ex9e(&mut self, x: usize) {
-        todo!("Might have to redesign");
-        // can't reverse lookup because emulator would need a reference to the active window object
-        // keymap
-        // keys
-        // new -> map thing
-        // maybe handle_keypress takes the key and maps it instead of using a map itself?
-        // second map?
-        // just query for keys directly?
+        let stored_key = self.v[x];
+        self.keys.iter_mut().for_each(|(_, data)| {
+            if stored_key == data.1 && data.0 {
+                self.pc += 2;
+            }
+        });
     }
 
     /// Skips one instruction if key in value V```x``` is not pressed.
-    fn op_exa1() {}
+    /// Executes if it's currently being held.
+    fn op_exa1(&mut self, x: usize) {
+        let stored_key = self.v[x];
+        self.keys.iter_mut().for_each(|(_, data)| {
+            if stored_key == data.1 && !data.0 {
+                self.pc += 2;
+            }
+        });
+    }
 
     /// sets v```x``` to current delay timer value.
     fn op_fx07(&mut self, x: usize) {
@@ -471,8 +480,11 @@ impl Chip8 {
         self.i += (self.v[x]) as u16;
     }
 
-    // stops executing and waits for a key press idk
-    fn op_fx0a() {}
+    fn op_fx0a(&mut self) {
+        if self.keys.iter().any(|(_, data)| data.0) {
+            self.pc -= 2;
+        }
+    }
 
     /// sets index register to the address of hexadecimal character in v```x```.
     fn op_fx29(&mut self, x: usize) {
@@ -486,11 +498,11 @@ impl Chip8 {
     /// Convert value in v```x``` to three decimal digits
     /// and store them in memory at address in index register i.
     fn op_fx33(&mut self, x: usize) {
-        // todo - fkn change the parameters to usize man
         // since any given number in v is u8 (<= 255), we only need to modulo 3 times
         let mut num = self.v[x];
         let address = self.i;
 
+        // 156 -> 1 in i, 5 in i + 1, 6 in i + 2
         // num will be truncated toward zero
         self.memory[(address + 2) as usize] = num % 10;
         num /= 10;
@@ -500,8 +512,27 @@ impl Chip8 {
 
         self.memory[address as usize] = num % 10;
     }
-    fn op_fx55() {}
-    fn op_fx65() {}
+
+    /// Reads values in V registers and stores them in
+    /// successive memory addresses starting from i
+    fn op_fx55(&mut self, x: usize) {
+        for i in 0..x + 1 {
+            self.memory[self.i as usize + i] = self.v[i];
+        }
+    }
+
+    /// Take values stored successively in memory
+    /// starting from i and then loads them
+    ///  into V registers
+    fn op_fx65(&mut self, x: usize) {
+        for i in 0..x + 1 {
+            self.v[i] = self.memory[self.i as usize + i];
+        }
+    }
+
+    fn op_unknown(&self, opcode: u16) {
+        eprintln!("Received unknown opcode! {opcode:X?}");
+    }
 }
 
 #[cfg(test)]
