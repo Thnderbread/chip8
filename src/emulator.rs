@@ -1,8 +1,9 @@
-#![allow(dead_code)]
-
-use std::{collections::HashMap, fs, path::PathBuf};
-
+use kira::{
+    AudioManager, AudioManagerSettings, DefaultBackend, Tween,
+    sound::static_sound::{StaticSoundData, StaticSoundHandle},
+};
 use minifb::Key;
+use std::{collections::HashMap, fs, path::PathBuf};
 
 use crate::DISPLAY_SIZE;
 
@@ -13,6 +14,44 @@ const MEMORY_SIZE: usize = 4096;
 
 // Programs start at address 200
 const PROGRAM_STARTING_ADDR: usize = 0x200;
+
+pub struct Beep {
+    manager: AudioManager,
+    sound_data: StaticSoundData,
+    beep_sound: Option<StaticSoundHandle>,
+}
+
+impl Beep {
+    pub fn new() -> Self {
+        let mut beep_path = std::env::current_dir().unwrap();
+        beep_path.push("src");
+        beep_path.push("beep.mp3");
+
+        Self {
+            manager: AudioManager::<DefaultBackend>::new(AudioManagerSettings::default())
+                .expect("Could not create audio manager."),
+            sound_data: StaticSoundData::from_file(beep_path)
+                .expect("Could not decode sound data."),
+            beep_sound: None,
+        }
+    }
+
+    pub fn play(&mut self) {
+        if let Some(sound) = self.beep_sound.as_mut() {
+            sound.seek_to(0.0);
+            sound.resume(Tween::default());
+        } else {
+            let sound = self.manager.play(self.sound_data.clone()).unwrap();
+            self.beep_sound = Some(sound);
+        }
+    }
+
+    pub fn stop(&mut self) {
+        if let Some(sound) = self.beep_sound.as_mut() {
+            sound.pause(Tween::default());
+        }
+    }
+}
 
 /// Represents the value in the keys store
 ///
@@ -30,6 +69,7 @@ pub struct Chip8 {
     pc: usize,
     v: [u8; 16],
     i: u16,
+    beep: Beep,
 }
 
 impl Chip8 {
@@ -45,15 +85,26 @@ impl Chip8 {
             pc: PROGRAM_STARTING_ADDR,
             v: [0; 16],
             i: 0,
+            beep: Beep::new(),
         };
         em.load_font();
         em.set_keys();
         em
     }
 
+    fn decrement_timers(&mut self) {
+        if self.delay_timer > 0 {
+            self.delay_timer -= 1;
+        }
+        if self.sound_timer > 0 {
+            self.sound_timer -= 1;
+        }
+    }
+
     pub fn run(&mut self) {
         let next_opcode = self.fetch_next_opcode();
         self.decode(next_opcode);
+        self.decrement_timers();
     }
 
     pub fn load_rom(&mut self, path: PathBuf) {
@@ -87,15 +138,6 @@ impl Chip8 {
         self.keys.insert(Key::O, KeyMapValue(false, 0x0));
         self.keys.insert(Key::B, KeyMapValue(false, 0xB));
         self.keys.insert(Key::F, KeyMapValue(false, 0xF));
-    }
-
-    pub fn decrement_timers(&mut self) {
-        if self.delay_timer > 0 {
-            self.delay_timer -= 1
-        }
-        if self.sound_timer > 0 {
-            self.sound_timer -= 1
-        }
     }
 
     pub fn get_display(&self) -> &[u32; DISPLAY_SIZE] {
@@ -279,7 +321,7 @@ impl Chip8 {
         }
     }
 
-    /// looks up register ```x``` and sets its value to ```nn```
+    /// Looks up register ```x``` and sets its value to ```nn```
     fn op_6xnn(&mut self, x: usize, nn: u8) {
         self.v[x] = nn;
     }
@@ -290,48 +332,47 @@ impl Chip8 {
         self.v[x] = result.0;
     }
 
-    /// set V```x``` to value of V```y```
+    /// Sets V```x``` to value of V```y```
     fn op_8xy0(&mut self, x: usize, y: usize) {
         self.v[x] = self.v[y];
     }
 
-    /// sets V```x``` to bitwise OR of V```x``` and V```y```
+    /// Sets V```x``` to bitwise OR of V```x``` and V```y```
     fn op_8xy1(&mut self, x: usize, y: usize) {
         self.v[x] |= self.v[y];
     }
 
-    /// sets V```x``` to bitwise AND of V```x``` and V```y```
+    /// Sets V```x``` to bitwise AND of V```x``` and V```y```
     fn op_8xy2(&mut self, x: usize, y: usize) {
         self.v[x] &= self.v[y];
     }
 
-    /// sets V```x``` to bitwise XOR of V```x``` and V```y```
+    /// Sets V```x``` to bitwise XOR of V```x``` and V```y```
     fn op_8xy3(&mut self, x: usize, y: usize) {
         self.v[x] ^= self.v[y];
     }
 
-    /// sets V```x``` to the sum of V```x``` and V```y```
+    /// Sets V```x``` to the sum of V```x``` and V```y```
+    /// VF is set to 1 if the addition would overflow, 0 otherwise.
     fn op_8xy4(&mut self, x: usize, y: usize) {
         let result = self.v[x].overflowing_add(self.v[y]);
         self.v[x] = result.0;
 
-        // cast it cause I'm lazy
+        // assign it directly because I'm lazy
         self.v[0xF] = result.1 as u8;
     }
 
-    /// sets V```x``` to the difference of V```x``` and V```y```
+    /// sets V```x``` to the difference of V```x``` and V```y```.
+    /// Sets VF to 0 if the subtraction would overflow, 1 otherwise.
     fn op_8xy5(&mut self, x: usize, y: usize) {
         let result = self.v[x].overflowing_sub(self.v[y]);
         self.v[x] = result.0;
 
-        if self.v[y] > self.v[x] {
-            self.v[0xF] = 1;
-        } else {
-            self.v[0xF] = 0;
-        }
+        self.v[0xF] = if result.1 { 0 } else { 1 }
     }
 
-    /// Stores V```y``` into V```x```, right shifts V```x```, and optionally sets VF.
+    /// Stores V```y``` into V```x```, right shifts V```x```,
+    /// and sets VF to the LSB that is shifted out.
     /// Uses COSMAC VIP implementation.
     fn op_8xy6(&mut self, x: usize, y: usize) {
         self.v[x] = self.v[y];
@@ -343,31 +384,27 @@ impl Chip8 {
     }
 
     /// sets V```x``` to difference V```y``` and V```x```.
-    /// Also sets V[0xF] based on the subtraction operation
+    /// Sets VF to 0 if the subtraction would overflow, 1 otherwise.
     fn op_8xy7(&mut self, x: usize, y: usize) {
         let result = self.v[y].overflowing_sub(self.v[x]);
         self.v[x] = result.0;
 
-        if self.v[y] > self.v[x] {
-            self.v[0xF] = 1;
-        } else if self.v[y] < self.v[x] {
-            self.v[0xF] = 0;
-        }
+        self.v[0xF] = if result.1 { 0 } else { 1 };
     }
 
-    /// Stores V```y``` into V```x```, left shifts V```x```, and optionally sets VF
+    /// Stores V```y``` into V```x```, left shifts V```x```.
+    /// Sets VF to the MSB that was shifted out.
     /// Uses COSMAC VIP implementation.
     fn op_8xye(&mut self, x: usize, y: usize) {
         self.v[x] = self.v[y];
 
-        // Figure out if bit to be shifted out is set, set vF to that value
-        let msb = 0b1000_0000 & self.v[x];
+        let msb = (0b1000_0000 & self.v[x]) >> 7;
         self.v[x] <<= 1;
         self.v[0xF] = msb;
     }
 
     /// Skips one instruction if
-    /// V```x``` and V```y``` are not equal
+    /// V```x``` and V```y``` are not equal.
     fn op_9xy0(&mut self, x: usize, y: usize) {
         if self.v[x] != self.v[y] {
             self.pc += 2;
@@ -386,7 +423,8 @@ impl Chip8 {
         self.op_1nnn(jump_destination);
     }
 
-    /// Generates a random number, binary ANDs it with ```nn```, and puts the result in V```x```.
+    /// Generates a random number, binary ANDs it with ```nn```,
+    /// and puts the result in V```x```.
     fn op_cxnn(&mut self, nn: u8, x: usize) {
         let num = rand::random::<u8>();
         self.v[x] = num & nn;
@@ -419,14 +457,14 @@ impl Chip8 {
                 let pixel_row = self.memory[self.i as usize + pixel as usize];
                 let mask: u8 = 0b1000_0000;
 
-                // which bits in this pixel row are set?
+                // which bits in this pixel row are set? Turn off the ones that are
+                // and turn on the ones that aren't.
                 if pixel_row & (mask >> sprite_bit) != 0 {
                     // get row and column offsets, multiply to get actual position
                     let display_idx = (pos_y + pixel) as usize * 64 + (pos_x + sprite_bit) as usize;
                     if self.display[display_idx] != 0 {
                         self.display[display_idx] = 0;
                         self.v[0xF] = 1;
-                        println!("Turning off pixel @ {display_idx}");
                     } else {
                         // each member of display signals a pixel to be toggled on or off.
                         // for the library in use, each pixel must be toggled "on"
@@ -460,42 +498,49 @@ impl Chip8 {
         });
     }
 
-    /// sets v```x``` to current delay timer value.
+    /// sets V```x``` to current delay timer value.
     fn op_fx07(&mut self, x: usize) {
         self.v[x] = self.delay_timer;
     }
 
-    /// sets delay timer to the value in v```x```.
+    /// sets delay timer to the value in V```x```.
     fn op_fx15(&mut self, x: usize) {
         self.delay_timer = self.v[x];
     }
 
-    /// sets the sound timer to the value in v```x```.
+    /// sets the sound timer to the value in V```x```.
+    /// Beeps if the sound timer is still above 0.
     fn op_fx18(&mut self, x: usize) {
         self.sound_timer = self.v[x];
+        if self.sound_timer > 0 {
+            self.beep.play()
+        } else {
+            self.beep.stop()
+        }
     }
 
-    /// Adds value of v```x``` to index register.
+    /// Adds value of V```x``` to index register.
     fn op_fx1e(&mut self, x: usize) {
         self.i += (self.v[x]) as u16;
     }
 
+    /// Blocks until a key input is received.
     fn op_fx0a(&mut self) {
         if self.keys.iter().any(|(_, data)| data.0) {
             self.pc -= 2;
         }
     }
 
-    /// sets index register to the address of hexadecimal character in v```x```.
+    /// Sets index register to the address of hexadecimal character in V```x```.
     fn op_fx29(&mut self, x: usize) {
         // isolate lower nibble to get needed char
         let num = 0xf & self.v[x];
 
-        // multiply by 5 since each char is 5 bytes apart to get offset & font starting idx
+        // multiply by 5 since each char is 5 bytes apart to get offset & font's starting idx
         self.i = self.memory[FONT_STARTING_ADDR + (5 * num as usize)] as u16;
     }
 
-    /// Convert value in v```x``` to three decimal digits
+    /// Convert value in V```x``` to three decimal digits
     /// and store them in memory at address in index register i.
     fn op_fx33(&mut self, x: usize) {
         // since any given number in v is u8 (<= 255), we only need to modulo 3 times
@@ -521,9 +566,9 @@ impl Chip8 {
         }
     }
 
-    /// Take values stored successively in memory
+    /// Takes values stored successively in memory
     /// starting from i and then loads them
-    ///  into V registers
+    /// into V registers
     fn op_fx65(&mut self, x: usize) {
         for i in 0..x + 1 {
             self.v[i] = self.memory[self.i as usize + i];
@@ -532,6 +577,50 @@ impl Chip8 {
 
     fn op_unknown(&self, opcode: u16) {
         eprintln!("Received unknown opcode! {opcode:X?}");
+    }
+}
+
+#[allow(dead_code)]
+/// Timendus' test suite for the Chip8 Emulator. Uses a few other tests.
+/// https://github.com/Timendus/chip8-test-suite/tree/main
+pub struct TestRoms {
+    /// Simple splash screen.
+    pub chip8_logo: &'static str,
+    /// Classic IBM ROM.
+    pub ibm_logo: &'static str,
+    /// Tests various opcodes.
+    pub corax: &'static str,
+    /// Tests correctness of math operations, and checks
+    /// correctness of vF flag register when running those
+    /// opcodes.
+    pub flags: &'static str,
+    /// Allows testing all 3 key CHIP-8 input opcodes.
+    pub keypad: &'static str,
+    /// Tests if the buzzer is working.
+    pub beep: &'static str,
+    /// Tests fundamental functions of the emulator.
+    /// https://github.com/cj1128/chip8-emulator/tree/master
+    pub bc_test: &'static str,
+    /// A game similar to Pac-Man.
+    pub blinky: &'static str,
+    /// Tests fundamental functions of the emulator.
+    /// https://github.com/cj1128/chip8-emulator/tree/master
+    pub test_opcode: &'static str,
+}
+
+impl TestRoms {
+    pub fn new() -> TestRoms {
+        Self {
+            chip8_logo: "1-chip8-logo",
+            ibm_logo: "2-ibm-logo.ch8",
+            corax: "3-corax.ch8",
+            flags: "4-flags.ch8",
+            keypad: "5-keypad.ch8",
+            beep: "6-beep.ch8",
+            test_opcode: "7-test_opcode.ch8",
+            bc_test: "BC_test.ch8",
+            blinky: "blinky.ch8",
+        }
     }
 }
 
@@ -550,6 +639,4 @@ mod tests {
             idx += 1;
         }
     }
-
-    fn decrements_timer() {}
 }
