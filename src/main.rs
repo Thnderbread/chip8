@@ -1,27 +1,25 @@
 use crate::emulator::Chip8;
 use crate::emulator::KeyMapValue;
-use crate::emulator::TestRoms;
+use crate::roms::romfiles::*;
 use minifb::{Key, KeyRepeat, Window, WindowOptions};
 use std::{thread, time::Duration};
 
 mod emulator;
+mod roms;
 
 const DISPLAY_WIDTH: usize = 64;
 const DISPLAY_HEIGHT: usize = 32;
 const EXECUTION_DELAY: u64 = 1430;
 const DISPLAY_SIZE: usize = DISPLAY_WIDTH * DISPLAY_HEIGHT;
 
-// https://www.reddit.com/r/bashonubuntuonwindows/comments/17jpeu4/getting_audio_through_wslg_from_alsaportaudio/
-
 fn main() {
-    println!("Hello goat");
     let mut em = Chip8::new();
-    let mut rom_path = std::env::current_dir().unwrap();
-    rom_path.push("roms");
-    rom_path.push("tests");
-    rom_path.push(TestRoms::new().flags);
+    #[allow(unused_variables)]
+    let tests = TestRomFilePaths::new();
+    #[allow(unused_variables)]
+    let games = GameRomFilePaths::new();
 
-    em.load_rom(rom_path);
+    em.load_rom(tests.flags);
 
     let mut window = Window::new(
         "Chip-8",
@@ -33,11 +31,6 @@ fn main() {
         },
     )
     .unwrap();
-
-    while !window.is_open() {
-        thread::sleep(Duration::from_micros(10));
-        println!("Waiting for window to open...");
-    }
 
     while window.is_open() && !window.is_key_pressed(Key::Escape, KeyRepeat::No) {
         em.keys.iter_mut().for_each(|(key, data)| {

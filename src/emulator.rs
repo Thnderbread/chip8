@@ -57,6 +57,7 @@ impl Beep {
 ///
 /// - `0`: Whether the key is pressed (bool).
 /// - `1`: The corresponding Chip8 Key (&'static str).
+#[derive(Debug)]
 pub struct KeyMapValue(pub bool, pub u8);
 
 pub struct Chip8 {
@@ -108,6 +109,8 @@ impl Chip8 {
     }
 
     pub fn load_rom(&mut self, path: PathBuf) {
+        println!("Loading rom {:?} into memory...", path.file_name().unwrap());
+
         let rom_buf = fs::read(path).unwrap_or_else(|e| {
             panic!("Couldn't read rom: {e}");
         });
@@ -118,7 +121,7 @@ impl Chip8 {
             ptr += 1;
         }
 
-        println!("Rom loaded into memory!");
+        println!("Done.");
     }
 
     fn set_keys(&mut self) {
@@ -577,50 +580,6 @@ impl Chip8 {
 
     fn op_unknown(&self, opcode: u16) {
         eprintln!("Received unknown opcode! {opcode:X?}");
-    }
-}
-
-#[allow(dead_code)]
-/// Timendus' test suite for the Chip8 Emulator. Uses a few other tests.
-/// https://github.com/Timendus/chip8-test-suite/tree/main
-pub struct TestRoms {
-    /// Simple splash screen.
-    pub chip8_logo: &'static str,
-    /// Classic IBM ROM.
-    pub ibm_logo: &'static str,
-    /// Tests various opcodes.
-    pub corax: &'static str,
-    /// Tests correctness of math operations, and checks
-    /// correctness of vF flag register when running those
-    /// opcodes.
-    pub flags: &'static str,
-    /// Allows testing all 3 key CHIP-8 input opcodes.
-    pub keypad: &'static str,
-    /// Tests if the buzzer is working.
-    pub beep: &'static str,
-    /// Tests fundamental functions of the emulator.
-    /// https://github.com/cj1128/chip8-emulator/tree/master
-    pub bc_test: &'static str,
-    /// A game similar to Pac-Man.
-    pub blinky: &'static str,
-    /// Tests fundamental functions of the emulator.
-    /// https://github.com/cj1128/chip8-emulator/tree/master
-    pub test_opcode: &'static str,
-}
-
-impl TestRoms {
-    pub fn new() -> TestRoms {
-        Self {
-            chip8_logo: "1-chip8-logo",
-            ibm_logo: "2-ibm-logo.ch8",
-            corax: "3-corax.ch8",
-            flags: "4-flags.ch8",
-            keypad: "5-keypad.ch8",
-            beep: "6-beep.ch8",
-            test_opcode: "7-test_opcode.ch8",
-            bc_test: "BC_test.ch8",
-            blinky: "blinky.ch8",
-        }
     }
 }
 
