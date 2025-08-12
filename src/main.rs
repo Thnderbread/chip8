@@ -1,5 +1,4 @@
 use crate::emulator::Chip8;
-use crate::emulator::KeyMapValue;
 use crate::roms::romfiles::*;
 use minifb::{Key, KeyRepeat, Window, WindowOptions};
 use std::{thread, time::Duration};
@@ -19,7 +18,7 @@ fn main() {
     #[allow(unused_variables)]
     let games = GameRomFilePaths::new();
 
-    em.load_rom(tests.flags);
+    em.load_rom(tests.keypad);
 
     let mut window = Window::new(
         "Chip-8",
@@ -33,10 +32,10 @@ fn main() {
     .unwrap();
 
     while window.is_open() && !window.is_key_pressed(Key::Escape, KeyRepeat::No) {
-        em.keys.iter_mut().for_each(|(key, data)| {
-            *data = KeyMapValue(window.is_key_pressed(*key, KeyRepeat::No), data.1);
-        });
         em.run();
+        em.keys
+            .iter_mut()
+            .for_each(|(key, data)| data.pressed = window.is_key_down(*key));
         window
             .update_with_buffer(em.get_display(), DISPLAY_WIDTH, DISPLAY_HEIGHT)
             .unwrap();

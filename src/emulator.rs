@@ -6,13 +6,8 @@ use minifb::Key;
 use std::{collections::HashMap, fs, path::PathBuf};
 
 use crate::DISPLAY_SIZE;
-
 const FONT_STARTING_ADDR: usize = 0x50;
-
-// memeory available to the emulator
 const MEMORY_SIZE: usize = 4096;
-
-// Programs start at address 200
 const PROGRAM_STARTING_ADDR: usize = 0x200;
 
 pub struct Beep {
@@ -53,12 +48,11 @@ impl Beep {
     }
 }
 
-/// Represents the value in the keys store
-///
-/// - `0`: Whether the key is pressed (bool).
-/// - `1`: The corresponding Chip8 Key (&'static str).
 #[derive(Debug)]
-pub struct KeyMapValue(pub bool, pub u8);
+pub struct KeyMapValue {
+    pub pressed: bool,
+    pub chip8key: u8,
+}
 
 pub struct Chip8 {
     memory: [u8; MEMORY_SIZE],
@@ -125,22 +119,118 @@ impl Chip8 {
     }
 
     fn set_keys(&mut self) {
-        self.keys.insert(Key::Key1, KeyMapValue(false, 0x1));
-        self.keys.insert(Key::Key2, KeyMapValue(false, 0x2));
-        self.keys.insert(Key::Key3, KeyMapValue(false, 0x3));
-        self.keys.insert(Key::Key4, KeyMapValue(false, 0xC));
-        self.keys.insert(Key::Q, KeyMapValue(false, 0x4));
-        self.keys.insert(Key::W, KeyMapValue(false, 0x5));
-        self.keys.insert(Key::E, KeyMapValue(false, 0x6));
-        self.keys.insert(Key::R, KeyMapValue(false, 0xD));
-        self.keys.insert(Key::A, KeyMapValue(false, 0x7));
-        self.keys.insert(Key::S, KeyMapValue(false, 0x8));
-        self.keys.insert(Key::D, KeyMapValue(false, 0x9));
-        self.keys.insert(Key::F, KeyMapValue(false, 0xE));
-        self.keys.insert(Key::A, KeyMapValue(false, 0xA));
-        self.keys.insert(Key::O, KeyMapValue(false, 0x0));
-        self.keys.insert(Key::B, KeyMapValue(false, 0xB));
-        self.keys.insert(Key::F, KeyMapValue(false, 0xF));
+        self.keys.insert(
+            Key::Key1,
+            KeyMapValue {
+                pressed: false,
+                chip8key: 0x1,
+            },
+        );
+        self.keys.insert(
+            Key::Key2,
+            KeyMapValue {
+                pressed: false,
+                chip8key: 0x2,
+            },
+        );
+        self.keys.insert(
+            Key::Key3,
+            KeyMapValue {
+                pressed: false,
+                chip8key: 0x3,
+            },
+        );
+        self.keys.insert(
+            Key::Key4,
+            KeyMapValue {
+                pressed: false,
+                chip8key: 0xC,
+            },
+        );
+        self.keys.insert(
+            Key::Q,
+            KeyMapValue {
+                pressed: false,
+                chip8key: 0x4,
+            },
+        );
+        self.keys.insert(
+            Key::W,
+            KeyMapValue {
+                pressed: false,
+                chip8key: 0x5,
+            },
+        );
+        self.keys.insert(
+            Key::E,
+            KeyMapValue {
+                pressed: false,
+                chip8key: 0x6,
+            },
+        );
+        self.keys.insert(
+            Key::R,
+            KeyMapValue {
+                pressed: false,
+                chip8key: 0xD,
+            },
+        );
+        self.keys.insert(
+            Key::A,
+            KeyMapValue {
+                pressed: false,
+                chip8key: 0x7,
+            },
+        );
+        self.keys.insert(
+            Key::S,
+            KeyMapValue {
+                pressed: false,
+                chip8key: 0x8,
+            },
+        );
+        self.keys.insert(
+            Key::D,
+            KeyMapValue {
+                pressed: false,
+                chip8key: 0x9,
+            },
+        );
+        self.keys.insert(
+            Key::F,
+            KeyMapValue {
+                pressed: false,
+                chip8key: 0xE,
+            },
+        );
+        self.keys.insert(
+            Key::Z,
+            KeyMapValue {
+                pressed: false,
+                chip8key: 0xA,
+            },
+        );
+        self.keys.insert(
+            Key::X,
+            KeyMapValue {
+                pressed: false,
+                chip8key: 0x0,
+            },
+        );
+        self.keys.insert(
+            Key::C,
+            KeyMapValue {
+                pressed: false,
+                chip8key: 0xB,
+            },
+        );
+        self.keys.insert(
+            Key::V,
+            KeyMapValue {
+                pressed: false,
+                chip8key: 0xF,
+            },
+        );
     }
 
     pub fn get_display(&self) -> &[u32; DISPLAY_SIZE] {
@@ -259,7 +349,7 @@ impl Chip8 {
             },
             0xF => match nn {
                 0x07 => self.op_fx07(x),
-                0x0a => self.op_fx0a(),
+                0x0a => self.op_fx0a(x),
                 0x15 => self.op_fx15(x),
                 0x18 => self.op_fx18(x),
                 0x1e => self.op_fx1e(x),
@@ -380,7 +470,7 @@ impl Chip8 {
     fn op_8xy6(&mut self, x: usize, y: usize) {
         self.v[x] = self.v[y];
 
-        // Figure out if bit to be shifted out is set, set vF to that value
+        // Set vF to bit that is shifted out
         let lsb = 1 & self.v[x];
         self.v[x] >>= 1;
         self.v[0xF] = lsb;
@@ -482,23 +572,35 @@ impl Chip8 {
     /// Skips one instruction if key in value V```x``` is pressed.
     /// checks if key is currently being held.
     fn op_ex9e(&mut self, x: usize) {
-        let stored_key = self.v[x];
-        self.keys.iter_mut().for_each(|(_, data)| {
-            if stored_key == data.1 && data.0 {
+        let stored_key = self.v[x] & 0x0F;
+        self.keys.iter().for_each(|(_, data)| {
+            if stored_key == data.chip8key && data.pressed {
                 self.pc += 2;
             }
         });
+
+        // reset pressed state of all keys for next operation
+        self.keys
+            .iter_mut()
+            .for_each(|(_, value)| value.pressed = false);
     }
 
     /// Skips one instruction if key in value V```x``` is not pressed.
     /// Executes if it's currently being held.
     fn op_exa1(&mut self, x: usize) {
-        let stored_key = self.v[x];
-        self.keys.iter_mut().for_each(|(_, data)| {
-            if stored_key == data.1 && !data.0 {
+        // look at lower 4 bits
+        let stored_key = self.v[x] & 0x0F;
+
+        self.keys.iter().for_each(|(_, value)| {
+            if stored_key == value.chip8key && !value.pressed {
                 self.pc += 2;
             }
         });
+
+        // reset pressed state of all keys for next operation
+        self.keys
+            .iter_mut()
+            .for_each(|(_, value)| value.pressed = false);
     }
 
     /// sets V```x``` to current delay timer value.
@@ -528,10 +630,15 @@ impl Chip8 {
     }
 
     /// Blocks until a key input is received.
-    fn op_fx0a(&mut self) {
-        if self.keys.iter().any(|(_, data)| data.0) {
-            self.pc -= 2;
+    fn op_fx0a(&mut self, x: usize) {
+        for (_, val) in self.keys.iter() {
+            if val.pressed {
+                self.v[x] = val.chip8key;
+                self.pc += 2;
+                return;
+            }
         }
+        self.pc -= 2;
     }
 
     /// Sets index register to the address of hexadecimal character in V```x```.
