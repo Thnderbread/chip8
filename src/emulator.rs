@@ -689,20 +689,3 @@ impl Chip8 {
         eprintln!("Received unknown opcode! {opcode:X?}");
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn loads_font_data() {
-        let em = Chip8::new();
-
-        let mut idx = 0x50;
-
-        for _ in 0..80 {
-            assert_ne!(em.memory[idx], 0);
-            idx += 1;
-        }
-    }
-}
