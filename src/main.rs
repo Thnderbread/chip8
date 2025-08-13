@@ -1,5 +1,4 @@
-use crate::emulator::Chip8;
-use crate::roms::romfiles::*;
+use crate::{emulator::Chip8, roms::romfiles::get_desired_rom};
 use minifb::{Key, KeyRepeat, Window, WindowOptions};
 use std::{thread, time::Duration};
 
@@ -13,12 +12,8 @@ const DISPLAY_SIZE: usize = DISPLAY_WIDTH * DISPLAY_HEIGHT;
 
 fn main() {
     let mut em = Chip8::new();
-    #[allow(unused_variables)]
-    let tests = TestRomFilePaths::new();
-    #[allow(unused_variables)]
-    let games = GameRomFilePaths::new();
-
-    em.load_rom(tests.keypad);
+    let rom_path = get_desired_rom();
+    em.load_rom(rom_path);
 
     let mut window = Window::new(
         "Chip-8",

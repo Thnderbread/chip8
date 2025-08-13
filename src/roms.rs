@@ -1,28 +1,28 @@
 #![allow(dead_code)]
 
 pub mod romfiles {
-    use std::{fs, path::PathBuf};
+    use std::{env, fs, path::PathBuf, process::exit};
 
     /// Timendus' test suite for the Chip8 Emulator. Uses a few other tests.
     /// https://github.com/Timendus/chip8-test-suite/tree/main
-    pub struct TestRomFilePaths {
+    struct TestRomFilePaths {
         /// Simple splash screen.
-        pub chip8_logo: PathBuf,
+        chip8_logo: PathBuf,
         /// Classic IBM ROM.
-        pub ibm_logo: PathBuf,
+        ibm_logo: PathBuf,
         /// Tests various opcodes.
-        pub corax: PathBuf,
+        corax: PathBuf,
         /// Tests correctness of math operations, and checks
         /// correctness of vF flag register when running those
         /// opcodes.
-        pub flags: PathBuf,
+        flags: PathBuf,
         /// Allows testing all 3 key CHIP-8 input opcodes.
-        pub keypad: PathBuf,
+        keypad: PathBuf,
         /// Tests if the buzzer is working.
-        pub beep: PathBuf,
+        beep: PathBuf,
         /// Tests fundamental functions of the emulator.
         /// https://github.com/cj1128/chip8-emulator/tree/master
-        pub test_opcode: PathBuf,
+        test_opcode: PathBuf,
     }
 
     impl TestRomFilePaths {
@@ -52,12 +52,12 @@ pub mod romfiles {
 
     /// Some Game roms to run on the emulator.
     /// https://github.com/cj1128/chip8-emulator/tree/master/rom
-    pub struct GameRomFilePaths {
-        pub blinky: PathBuf,
-        pub cave: PathBuf,
-        pub maze: PathBuf,
-        pub pong: PathBuf,
-        pub tetris: PathBuf,
+    struct GameRomFilePaths {
+        blinky: PathBuf,
+        cave: PathBuf,
+        maze: PathBuf,
+        pong: PathBuf,
+        tetris: PathBuf,
     }
 
     impl GameRomFilePaths {
@@ -79,6 +79,56 @@ pub mod romfiles {
                 maze: filepaths[2].clone(),
                 pong: filepaths[3].clone(),
                 tetris: filepaths[4].clone(),
+            }
+        }
+    }
+
+    /// Reads desired rom from program arguments and returns its filepath
+    pub fn get_desired_rom() -> PathBuf {
+        let valid_roms = [
+            "chip8_logo",
+            "ibm_logo",
+            "corax",
+            "flags",
+            "keypad",
+            "beep",
+            "test_opcode",
+            "blinky",
+            "cave",
+            "maze",
+            "pong",
+            "tetris",
+        ];
+
+        let args: Vec<String> = env::args().collect();
+
+        if args.len() < 2 {
+            eprintln!("Please choose a rom to run. Valid roms are:");
+            valid_roms.iter().for_each(|r| eprintln!("{r}"));
+            eprintln!("E.g. chip8 test_opcode");
+            exit(1);
+        }
+
+        let requested_rom = &args[1];
+        let tests = TestRomFilePaths::new();
+        let games = GameRomFilePaths::new();
+
+        match requested_rom.to_lowercase().as_str() {
+            "chip8_logo" => tests.chip8_logo,
+            "ibm_logo" => tests.ibm_logo,
+            "corax" => tests.corax,
+            "flags" => tests.flags,
+            "keypad" => tests.keypad,
+            "beep" => tests.beep,
+            "test_opcode" => tests.test_opcode,
+            "blinky" => games.blinky,
+            "cave" => games.cave,
+            "maze" => games.maze,
+            "pong" => games.pong,
+            "tetris" => games.tetris,
+            _ => {
+                eprintln!("Invalid entry {requested_rom}. Valid roms are: {valid_roms:?}");
+                exit(1);
             }
         }
     }
