@@ -3,7 +3,7 @@
 pub mod romfiles {
     use std::{env, fs, path::PathBuf, process::exit};
 
-    /// Timendus' test suite for the Chip8 Emulator. Uses a few other tests.
+    /// Timendus' test suite for the Chip8 Emulator.
     /// https://github.com/Timendus/chip8-test-suite/tree/main
     struct TestRomFilePaths {
         /// Simple splash screen.
@@ -23,6 +23,11 @@ pub mod romfiles {
         /// Tests fundamental functions of the emulator.
         /// https://github.com/cj1128/chip8-emulator/tree/master
         test_opcode: PathBuf,
+        /// Tests various codes.
+        /// https://github.com/metteo/chip8-test-rom
+        metteo_test: PathBuf,
+        /// Tests the quirks for our emulator
+        quirks: PathBuf,
     }
 
     impl TestRomFilePaths {
@@ -46,6 +51,8 @@ pub mod romfiles {
                 keypad: filepaths[4].clone(),
                 beep: filepaths[5].clone(),
                 test_opcode: filepaths[6].clone(),
+                metteo_test: filepaths[7].clone(),
+                quirks: filepaths[8].clone(),
             }
         }
     }
@@ -93,6 +100,7 @@ pub mod romfiles {
             "keypad",
             "beep",
             "test_opcode",
+            "metteo_test",
             "blinky",
             "cave",
             "maze",
@@ -121,13 +129,15 @@ pub mod romfiles {
             "keypad" => tests.keypad,
             "beep" => tests.beep,
             "test_opcode" => tests.test_opcode,
+            "metteo_test" => tests.metteo_test,
+            "quirks" => tests.quirks,
             "blinky" => games.blinky,
             "cave" => games.cave,
             "maze" => games.maze,
             "pong" => games.pong,
             "tetris" => games.tetris,
             _ => {
-                eprintln!("Invalid entry {requested_rom}. Valid roms are: {valid_roms:?}");
+                eprintln!("Invalid entry '{requested_rom}'. Valid roms are: {valid_roms:?}");
                 exit(1);
             }
         }
