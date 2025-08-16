@@ -1,4 +1,4 @@
-use crate::{emulator::Chip8, roms::romfiles::get_desired_rom};
+use crate::{emulator::Chip8, roms::get_desired_rom};
 use minifb::{Key, KeyRepeat, Window, WindowOptions};
 use std::{thread, time::Duration};
 
